@@ -25,29 +25,10 @@ var DEFAULT_GAMEID = "WOLFEY";
 
 //bot listeners
 function bot(robot) {
-    robot.hear(/test multidm/i, function(res) {
-        var ids = ["U1N734ERK", "U02R7LM5U"];
-        createMultiParty(ids, function(grp_id) {
-            console.log("DM ID", grp_id);
-            robot.messageRoom(grp_id, "TEST ROBOT MULTIDM: pls ignore");
-        });
-    });
-
-    robot.hear(/test dm/i, function(res) {
-        robot.messageRoom("U02R7LM5U", "TEST ROBOT SINGLEDM: pls ignore");
-    });
-
-
 
     robot.respond(/delete brain/i, function (res) {
         robot.brain.data.games = {};
         res.send("brain deleted");
-    });
-
-    robot.respond(/show games/i, function (res) {
-        var games = robot.brain.data.games;
-        console.log('RES', res.message.user.id, res.message.user.name);
-        res.send("check logs");
     });
 
     //Start Game
@@ -101,6 +82,7 @@ function bot(robot) {
 
     robot.on("wolves wake up", function() {
         //the wolves wake up and select someone to kill
+        var gameId = DEFAULT_GAMEID;
         var wolvesDMChannel = robot.brain.data.games[gameId].WOLVES_DM;
         robot.messageRoom(wolvesDMChannel, "Meal Time! Discuss amongst yourselves and one of you can issue the final kill command: `kill <username>` You have 20 seconds");
         robot.respond(/kill (.*)/i, function (res) {
@@ -119,6 +101,7 @@ function bot(robot) {
 
     robot.on("healer", function () {
         //the healer wakes up to heal a player from speculated wolf attacks
+        var gameId = DEFAULT_GAMEID;
         var healerDMChannel = robot.brain.data.games[gameId].HEALER_DM;
         robot.messageRoom(healerDMChannel, "Heal a fellow villager with the command: `heal <username>` You have 20 seconds");
 
@@ -137,6 +120,7 @@ function bot(robot) {
 
     robot.on("seeker", function (seeker) {
         //the seeker wakes up to consult the oracle
+        var gameId = DEFAULT_GAMEID;
         var seekerDMChannel = robot.brain.data.games[gameId].SEEKER_DM;
         robot.messageRoom(seekerDMChannel, "Chosen one, ask the Oracle to reveal who the wolf is with the command: `wolf? <suspect_username>` You have 20 seconds");
         robot.respond(/wolf? (.*)/i, function (res) {
@@ -180,6 +164,7 @@ function bot(robot) {
     robot.on("voting", function() {
         //players nominate a player that they think is a wolf
         robot.messageRoom(DEFAULT_CHANNEL, "It's vigilante justice time! Send me a DM with the command: `vote <suspect_username>` to nominate a suspect");
+        var gameId = DEFAULT_GAMEID;
         robot.brain.data.games[gameId].currentRoundVotes = [];
         robot.respond(/vote (.*)/i, function (res) {
             var player = res.match[1];
@@ -197,6 +182,7 @@ function bot(robot) {
     robot.on("execution", function() {
         //notifies channel of who the vote executed, triggers loop
         //calculate player with most votes and kill them
+        var gameId = DEFAULT_GAMEID;
         var playerWithMostVotes = getPlayerWithMostVotes(robot.brain.data.games[gameId].currentRoundVotes);
         killPlayerByVotes(robot, playerWithMostVotes);
 
@@ -206,17 +192,18 @@ function bot(robot) {
 
     robot.on("new round", function() {
         //Calculate number of wolves vs villagers still in the game. Determine whether to end game or continue
+        var gameId = DEFAULT_GAMEID;
         var numWolves = countWolves();
         var numVillagers = countVillagers();
 
         if(numVillagers < numWolves) {
             //wolves win
             robot.messageRoom(DEFAULT_CHANNEL, "GAME OVER! The wolves win! :wolf-thumbs-up:");
-            robot.brain.data.games[DEFAULT_GAMEID].status = "off";
+            robot.brain.data.games[gameId].status = "off";
         }
         else if(numWolves === 0) {
             robot.messageRoom(DEFAULT_CHANNEL, "GAME OVER! All the wolves are dead so the villagers win! :raised_hands:");
-            robot.brain.data.games[DEFAULT_GAMEID].status = "off";
+            robot.brain.data.games[gameId].status = "off";
         }
         else {
             robot.emit("village sleep");
@@ -234,6 +221,7 @@ function countVillagers() {
 }
 
 function killPlayer(robot, player) {
+    var gameId = DEFAULT_GAMEID;
     delete robot.brain.data.games[gameId].roles[player];
 }
 
@@ -302,7 +290,7 @@ function notifyPlayerOfRole(robot, slackId, role) {
             message += "seeker! :wizard:"
             break;
         default:
-            default message += "villager ¯\\_(ツ)_/¯"
+            message += "villager ¯\\_(ツ)_/¯"
     }
     robot.messageRoom(slackId, message);
 }
@@ -310,7 +298,8 @@ function notifyPlayerOfRole(robot, slackId, role) {
 //refactor to modify player roles in place
 function assignRolesAndNotifyPlayers(robot, wolfIndexes, healerIndex, seekerIndex) {
 
-    var players = robot.brain.data.games[DEFAULT_GAMEID].players;
+    var gameId = DEFAULT_GAMEID;
+    var players = robot.brain.data.games[gameId].players;
 
     for(var playerIndex in players) {
         var intPlayerIndex = Number(playerIndex); // because for in keys are strings
@@ -335,7 +324,8 @@ function assignRolesAndNotifyPlayers(robot, wolfIndexes, healerIndex, seekerInde
 }
 
 function generateRoleIndexesAndAssign(robot) {
-    var players = robot.brain.data.games[DEFAULT_GAMEID].players;
+    var gameId = DEFAULT_GAMEID;
+    var players = robot.brain.data.games[gameId].players;
     var numPlayers = players.length;
     var numWolves = Math.floor(0.3 * numPlayers);
 
@@ -370,6 +360,7 @@ function createMultiParty(slackIds, cb) {
 }
 
 function setUpWolvesDM(robot, players, wolfIndexes) {
+    var gameId = DEFAULT_GAMEID;
     var ids = [];
     for (var i in wolfIndexes) {
         ids.push(players[wolfIndexes[i]].id);
@@ -381,6 +372,7 @@ function setUpWolvesDM(robot, players, wolfIndexes) {
 }
 
 function setUpHealerDM(robot, players, healerIndex) {
+    var gameId = DEFAULT_GAMEID;
     var ids = [];
     ids.push(players[healerIndex]);
     createMultiParty(ids, function(multiDM) {
@@ -389,6 +381,7 @@ function setUpHealerDM(robot, players, healerIndex) {
 }
 
 function setUpSeekerDM(robot, players, seekerIndex) {
+    var gameId = DEFAULT_GAMEID;
     var ids = [];
     ids.push(players[seekerIndex]);
     createMultiParty(ids, function(multiDM) {

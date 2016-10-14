@@ -398,5 +398,3 @@ function setUpSeekerDM(robot, players, seekerIndex) {
 
 
 module.exports = bot;
-
-//"HUBOT_SLACK_TOKEN=xoxb-88992331008-5gZVtb4ZAMVPtRhaXY8hH152 ./bin/hubot --adapter slack"

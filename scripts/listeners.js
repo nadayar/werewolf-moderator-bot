@@ -18,6 +18,7 @@ var request   = require('request');
 // set globals
 var CHANNEL_ID;
 var PLAYER_ROLES = {wolf: "wolf", healer: "healer", seeker: "seeker", villager: "villager"};
+var PLAYER_HEALTH = {alive: "alive", dead: "dead"};
 var DEFAULT_CHANNEL = "C2M2XSY5Q";
 var DEFAULT_TIMEOUT = 10000;
 var DEFAULT_GAMEID = "WOLFEY";
@@ -57,7 +58,7 @@ function bot(robot) {
         robot.respond(/join/i, function (res) {
             var name = res.message.user.name;
             var id = res.message.user.id;
-            var newPlayer = {name: name, id: id};
+            var newPlayer = {name: name, id: id, health: PLAYER_HEALTH.alive};
             robot.brain.data.games[gameId].players.push(newPlayer);
         });
 
@@ -82,6 +83,7 @@ function bot(robot) {
 
     robot.on("wolves wake up", function() {
         //the wolves wake up and select someone to kill
+        robot.messageRoom(DEFAULT_CHANNEL, "The wolves come out. They acknowledge themselves :wolf-thumbs-up: They decide on who to kill");
         var gameId = DEFAULT_GAMEID;
         var wolvesDMChannel = robot.brain.data.games[gameId].WOLVES_DM;
         robot.messageRoom(wolvesDMChannel, "Meal Time! Discuss amongst yourselves and one of you can issue the final kill command: `kill <username>` You have 20 seconds");
@@ -92,6 +94,7 @@ function bot(robot) {
         });
         setTimeout(function() {
             //trigger healer event
+            robot.messageRoom(DEFAULT_CHANNEL, "The wolves have decided on who to kill");
             robot.emit("healer");
             return true;
         }, DEFAULT_TIMEOUT);
@@ -101,6 +104,7 @@ function bot(robot) {
 
     robot.on("healer", function () {
         //the healer wakes up to heal a player from speculated wolf attacks
+        robot.messageRoom(DEFAULT_CHANNEL, "It's 2am in the morning. The healer wakes up and feels led to heal someone");
         var gameId = DEFAULT_GAMEID;
         var healerDMChannel = robot.brain.data.games[gameId].HEALER_DM;
         robot.messageRoom(healerDMChannel, "Heal a fellow villager with the command: `heal <username>` You have 20 seconds");
@@ -113,13 +117,16 @@ function bot(robot) {
         });
         setTimeout(function() {
             //trigger seeker event
+            robot.messageRoom(DEFAULT_CHANNEL, "The healer has picked someone to heal :pill:");
             robot.emit("seeker");
             return true;
         }, DEFAULT_TIMEOUT);
     });
 
+
     robot.on("seeker", function (seeker) {
         //the seeker wakes up to consult the oracle
+        robot.messageRoom(DEFAULT_CHANNEL, "It's 3am in the morning. The seeker wakes up to consult the oracle");
         var gameId = DEFAULT_GAMEID;
         var seekerDMChannel = robot.brain.data.games[gameId].SEEKER_DM;
         robot.messageRoom(seekerDMChannel, "Chosen one, ask the Oracle to reveal who the wolf is with the command: `wolf? <suspect_username>` You have 20 seconds");
@@ -136,18 +143,41 @@ function bot(robot) {
         });
         setTimeout(function() {
             //trigger awake event
-            robot.emit("awake");
+            robot.messageRoom(DEFAULT_CHANNEL, "The seeker goes back to sleep");
+            robot.emit("finalize wolf kill");
             return true;
         }, DEFAULT_TIMEOUT);
     });
 
+    robot.on("finalize wolf kill", function () {
+        var gameId = DEFAULT_GAMEID;
+        var killedPlayer = robot.brain.data.games[gameId].currentKilledPlayer;
+        var healedPlayer = robot.brain.data.games[gameId].currentHealedPlayer;
 
-    robot.on("awake", function() {
+        if(killedPlayer != healedPlayer) {
+            killPlayer(killedPlayer);
+            robot.emit("awake with deaths", killedPlayer);
+        }
+        else {
+            robot.emit("awake no deaths");
+        }
+
+    });
+
+    robot.on("awake no deaths", function() {
         //the village wakes up
         robot.messageRoom(DEFAULT_CHANNEL, "It's morning! :sun_small_cloud:  The village wakes up! :rooster:");
-        //TODO ANNOUNCE WHO DIED! OR WHO DID NOT
         robot.messageRoom(DEFAULT_CHANNEL, "Nobody died last night!");
         //trigger banter
+        robot.emit("banter");
+    });
+
+    robot.on("awake with deaths", function(killedPlayer) {
+        //the village wakes up
+        robot.messageRoom(DEFAULT_CHANNEL, "It's morning! :sun_small_cloud:  The village wakes up! :rooster:");
+        robot.messageRoom(DEFAULT_CHANNEL, "Sadly, @" + killedPlayer + " died last night! :skull:";
+        //trigger banter
+        robot.emit("banter");
     });
     
     robot.on("banter", function() {
@@ -193,8 +223,8 @@ function bot(robot) {
     robot.on("new round", function() {
         //Calculate number of wolves vs villagers still in the game. Determine whether to end game or continue
         var gameId = DEFAULT_GAMEID;
-        var numWolves = countWolves();
-        var numVillagers = countVillagers();
+        var numWolves = countWolves(robot);
+        var numVillagers = countVillagers(robot, numWolves);
 
         if(numVillagers < numWolves) {
             //wolves win
@@ -212,28 +242,43 @@ function bot(robot) {
     });
 }
 
-function countWolves() {
-    return 3;
+function textifyActivePlayers(players) {
+    var activePlayers = _.filter(players, {health: PLAYER_HEALTH.alive});
+    var activePlayerNames = _.map(activePlayers, 'name');
+    return _.join(activePlayerNames, "\n");
 }
 
-function countVillagers() {
-    return 5;
-}
-
-function killPlayer(robot, player) {
+function countWolves(robot) {
     var gameId = DEFAULT_GAMEID;
-    delete robot.brain.data.games[gameId].roles[player];
+    var wolves = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.wolf, health: PLAYER_HEALTH.alive};
+    return wolves.length;
 }
 
-function sendPlayerDeadNotice(robot, player) {
+function countVillagers(robot) {
+    var gameId = DEFAULT_GAMEID;
+    var aliveVillagers = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.villager, health: PLAYER_HEALTH.alive};
+    var aliveHealer = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.healer, health: PLAYER_HEALTH.alive};
+    var aliveSeeker = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.seeker, health: PLAYER_HEALTH.alive};
+    var numVillagers = aliveVillagers.length + aliveHealer.length + aliveSeeker.length;
+
+    return numVillagers - numWolves;
+}
+
+function killPlayer(robot, playerName) {
+    var gameId = DEFAULT_GAMEID;
+    var player = _.find(robot.brain.data.games[gameId].players, {name: playerName});
+    player.health = PLAYER_HEALTH.dead;
+}
+
+function sendPlayerDeadNotice(robot, playerName) {
     var deathMessage = "@" + player + " is dead! :skull:";
     robot.messageRoom(DEFAULT_CHANNEL, "@" + player + "");
 }
 
-function killPlayerByVotes(robot, player) {
+function killPlayerByVotes(robot, playerName) {
     //TODO: consider case where votes yielded no clear winner
-    killPlayer(robot, player);
-    sendPlayerDeadNotice(robot, player);
+    killPlayer(robot, playerName);
+    sendPlayerDeadNotice(robot, playerName);
 }
 
 function getPlayerWithMostVotes(votes) {

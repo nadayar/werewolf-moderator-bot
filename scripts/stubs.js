@@ -1,44 +1,32 @@
-var mock_data = [
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
+var mock_data = [ 
+  { 
+    name: 'heavywater',
+    id: 'U0XT5CY5Q',
+    health: 'alive',
+    role: 'wolf' 
   },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
+  { 
+    name: 'sheyooo',
+    id: 'U0XNSDAD8',
+    health: 'alive',
+    role: 'healer' 
   },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
+  { name: 'g-bengs',
+    id: 'U02SB47ED',
+    health: 'alive',
+    role: 'villager' 
   },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
+  { 
+    name: 'kesiena.akp',
+    id: 'U1X017AAU',
+    health: 'alive',
+    role: 'seeker' 
   },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
-  },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
-  },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
-  },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
-  },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
-  },
-  {
-    "name": "nad",
-    "id": "U02R7LM5U",
-  },
+  { name: 'nad',
+    id: 'U02R7LM5U',
+    health: 'alive',
+    role: 'villager' 
+  } 
 ];
 
 module.exports = mock_data;

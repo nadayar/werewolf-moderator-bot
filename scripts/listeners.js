@@ -19,7 +19,7 @@ var request   = require('request');
 var CHANNEL_ID;
 var PLAYER_ROLES = {wolf: "wolf", healer: "healer", seeker: "seeker", villager: "villager"};
 var PLAYER_HEALTH = {alive: "alive", dead: "dead"};
-var DEFAULT_CHANNEL = "C2M2XSY5Q";
+var DEFAULT_CHANNEL = "C2RF9N334";
 var DEFAULT_TIMEOUT = 10000;
 var DEFAULT_GAMEID = "WOLFEY";
 
@@ -54,25 +54,48 @@ function bot(robot) {
         robot.brain.data.games[gameId].WOLVES_DM = "";
         robot.brain.data.games[gameId].HEALER_DM = "";
         robot.brain.data.games[gameId].SEEKER_DM = "";
+        robot.brain.data.games[gameId].wolfIds = [];
 
         robot.respond(/join/i, function (res) {
             var name = res.message.user.name;
             var id = res.message.user.id;
             var newPlayer = {name: name, id: id, health: PLAYER_HEALTH.alive};
             robot.brain.data.games[gameId].players.push(newPlayer);
+
+            //TODO thank player for joining
+            res.send('Thanks @' + name + " for joining! I'm waiting for other players to join so I can assign your role!");
         });
 
         setTimeout(function() {
+            //TODO block users from joining a game in session
+            //TODO unique users
+            console.log("time out to join");
             robot.messageRoom(DEFAULT_CHANNEL, "@here Registration is now over! Sending you all DMs with your new roles ;)");
+            console.log("players", robot.brain.data.games[gameId].players);
             robot.emit("assign roles");
             return true;
         }, 20000);
     });
 
     robot.on("assign roles", function() {
+        console.log("assign roles");
         //send DMs, inform channel of number of players, wolves, healers. etc
+        var gameId = DEFAULT_GAMEID;
         generateRoleIndexesAndAssign(robot);
-        robot.emit("village sleep");
+        var ids = robot.brain.data.games[gameId].wolfIds;
+        if(ids.length > 1){
+            createMultiParty(ids, function(multiDM) {
+                console.log("WOLVES DM IS", multiDM);
+                robot.brain.data.games[gameId].WOLVES_DM = multiDM;
+                robot.emit("village sleep");
+            });
+        }
+        else {
+            var wolfId = robot.brain.data.games[gameId].players[wolfIds[0]].id;
+            robot.brain.data.games[gameId].WOLVES_DM = wolfId;
+            robot.emit("village sleep");
+        }
+        console.log("players", robot.brain.data.games[gameId].players);
     });
 
     robot.on("village sleep", function() {
@@ -86,24 +109,29 @@ function bot(robot) {
         robot.messageRoom(DEFAULT_CHANNEL, "The wolves come out. They acknowledge themselves :wolf-thumbs-up: They decide on who to kill");
         var gameId = DEFAULT_GAMEID;
         var wolvesDMChannel = robot.brain.data.games[gameId].WOLVES_DM;
+        console.log("wolves wake up", wolvesDMChannel);
         robot.messageRoom(wolvesDMChannel, "Meal Time! Discuss amongst yourselves and one of you can issue the final kill command: `kill <username>` You have 20 seconds");
-        robot.respond(/kill (.*)/i, function (res) {
+        
+        robot.hear(/kill (.*)/i, function (res) {
             var killedPlayer = res.match[1];
             robot.brain.data.games[gameId].currentKilledPlayer = killedPlayer;
             res.send("You have decided to kill " + killedPlayer + ". :wolf-thumbs-up:");    
         });
+
         setTimeout(function() {
             //trigger healer event
             robot.messageRoom(DEFAULT_CHANNEL, "The wolves have decided on who to kill");
+            console.log("wolves decided to kill ", robot.brain.data.games[gameId].currentKilledPlayer);
             robot.emit("healer");
             return true;
-        }, DEFAULT_TIMEOUT);
+        }, 20000);
 
 
     });
 
     robot.on("healer", function () {
         //the healer wakes up to heal a player from speculated wolf attacks
+        console.log("healer wakes up");
         robot.messageRoom(DEFAULT_CHANNEL, "It's 2am in the morning. The healer wakes up and feels led to heal someone");
         var gameId = DEFAULT_GAMEID;
         var healerDMChannel = robot.brain.data.games[gameId].HEALER_DM;
@@ -118,6 +146,7 @@ function bot(robot) {
         setTimeout(function() {
             //trigger seeker event
             robot.messageRoom(DEFAULT_CHANNEL, "The healer has picked someone to heal :pill:");
+            console.log("healer decided to heal ", robot.brain.data.games[gameId].currentHealedPlayer);
             robot.emit("seeker");
             return true;
         }, DEFAULT_TIMEOUT);
@@ -126,13 +155,18 @@ function bot(robot) {
 
     robot.on("seeker", function (seeker) {
         //the seeker wakes up to consult the oracle
+        console.log("seeker wakes up");
+        var suspect = "";
         robot.messageRoom(DEFAULT_CHANNEL, "It's 3am in the morning. The seeker wakes up to consult the oracle");
         var gameId = DEFAULT_GAMEID;
         var seekerDMChannel = robot.brain.data.games[gameId].SEEKER_DM;
-        robot.messageRoom(seekerDMChannel, "Chosen one, ask the Oracle to reveal who the wolf is with the command: `wolf? <suspect_username>` You have 20 seconds");
-        robot.respond(/wolf? (.*)/i, function (res) {
-            var suspect = res.match[1];
-            var isWolf = robot.brain.data.games[DEFAULT_GAMEID].roles[suspect] === PLAYER_ROLES.wolf;
+        robot.messageRoom(seekerDMChannel, "Chosen one, ask the Oracle to reveal who the wolf is with the command: `seek <suspect_username>` You have 20 seconds");
+        
+        robot.respond(/seek (.*)/i, function (res) {
+            console.log("suspect received");
+            suspect = res.match[1];
+            var suspectObj = _.find(robot.brain.data.games[DEFAULT_GAMEID].players, {name: suspect});
+            var isWolf = suspectObj.role === PLAYER_ROLES.wolf;
 
             if(isWolf) {
                 res.send("Yes, " + suspect + " is a wolf!");
@@ -144,9 +178,10 @@ function bot(robot) {
         setTimeout(function() {
             //trigger awake event
             robot.messageRoom(DEFAULT_CHANNEL, "The seeker goes back to sleep");
+            console.log("seeker asked for", suspect);
             robot.emit("finalize wolf kill");
             return true;
-        }, DEFAULT_TIMEOUT);
+        }, 20000);
     });
 
     robot.on("finalize wolf kill", function () {
@@ -175,7 +210,7 @@ function bot(robot) {
     robot.on("awake with deaths", function(killedPlayer) {
         //the village wakes up
         robot.messageRoom(DEFAULT_CHANNEL, "It's morning! :sun_small_cloud:  The village wakes up! :rooster:");
-        robot.messageRoom(DEFAULT_CHANNEL, "Sadly, @" + killedPlayer + " died last night! :skull:";
+        robot.messageRoom(DEFAULT_CHANNEL, "Sadly, @" + killedPlayer + " died last night! :skull:");
         //trigger banter
         robot.emit("banter");
     });
@@ -185,7 +220,7 @@ function bot(robot) {
         robot.messageRoom(DEFAULT_CHANNEL, "There are still wolves in the village! Discuss amongst each other to find out who the wolf is. In 2 mins, you'll have the chance to vote who you think the wolf is for execution");
         setTimeout(function() {
             //trigger awake event
-            robot.emit("voting");
+            // robot.emit("voting");
             return true;
         }, 20000);
 
@@ -250,15 +285,15 @@ function textifyActivePlayers(players) {
 
 function countWolves(robot) {
     var gameId = DEFAULT_GAMEID;
-    var wolves = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.wolf, health: PLAYER_HEALTH.alive};
+    var wolves = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.wolf, health: PLAYER_HEALTH.alive});
     return wolves.length;
 }
 
 function countVillagers(robot) {
     var gameId = DEFAULT_GAMEID;
-    var aliveVillagers = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.villager, health: PLAYER_HEALTH.alive};
-    var aliveHealer = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.healer, health: PLAYER_HEALTH.alive};
-    var aliveSeeker = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.seeker, health: PLAYER_HEALTH.alive};
+    var aliveVillagers = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.villager, health: PLAYER_HEALTH.alive});
+    var aliveHealer = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.healer, health: PLAYER_HEALTH.alive});
+    var aliveSeeker = _.filter(robot.brain.data.games[gameId].players, {role: PLAYER_ROLES.seeker, health: PLAYER_HEALTH.alive});
     var numVillagers = aliveVillagers.length + aliveHealer.length + aliveSeeker.length;
 
     return numVillagers - numWolves;
@@ -346,9 +381,11 @@ function assignRolesAndNotifyPlayers(robot, wolfIndexes, healerIndex, seekerInde
     var gameId = DEFAULT_GAMEID;
     var players = robot.brain.data.games[gameId].players;
 
+    console.log("assignRolesAndNotifyPlayers", players);
+
     for(var playerIndex in players) {
         var intPlayerIndex = Number(playerIndex); // because for in keys are strings
-        players[intPlayerIndex] = PLAYER_ROLES.villager;
+        players[intPlayerIndex].role = PLAYER_ROLES.villager;
         
         if(wolfIndexes.indexOf(intPlayerIndex) > -1) {
             players[intPlayerIndex].role = PLAYER_ROLES.wolf;
@@ -378,10 +415,14 @@ function generateRoleIndexesAndAssign(robot) {
     var healerIndex = generateHealerIndex(wolfIndexes, numPlayers);
     var seekerIndex = generateSeekerIndex(wolfIndexes, healerIndex, numPlayers);
 
-    var playerRoles = assignRolesAndNotifyPlayers(robot, wolfIndexes, healerIndex, seekerIndex);
-    setUpWolvesDM(robot, players, wolfIndexes);
+    assignRolesAndNotifyPlayers(robot, wolfIndexes, healerIndex, seekerIndex);
+    robot.brain.data.games[gameId].wolfIndexes = wolfIndexes;
+    robot.brain.data.games[gameId].healerIndex = healerIndex;
+    robot.brain.data.games[gameId].seekerIndex = seekerIndex;
+    robot.brain.data.games[gameId].wolfIds = getWolfIds(robot, players, wolfIndexes);
     setUpHealerDM(robot, players, healerIndex);
     setUpSeekerDM(robot, players, seekerIndex);
+
 }
 
 function createMultiParty(slackIds, cb) {
@@ -404,34 +445,33 @@ function createMultiParty(slackIds, cb) {
     })
 }
 
-function setUpWolvesDM(robot, players, wolfIndexes) {
+function getWolfIds(robot, players, wolfIndexes) {
     var gameId = DEFAULT_GAMEID;
     var ids = [];
     for (var i in wolfIndexes) {
+        console.log("setting up wolves DM", wolfIndexes, wolfIndexes[i], players, players[wolfIndexes[i]], players[wolfIndexes[i]].id);
         ids.push(players[wolfIndexes[i]].id);
     }
+    return ids;
+}
+
+function setUpWolvesDM(robot, players, wolfIndexes) {
     createMultiParty(ids, function(multiDM) {
+        console.log("WOLVES DM IS", multiDM);
         robot.brain.data.games[gameId].WOLVES_DM = multiDM;
     });
-
 }
 
 function setUpHealerDM(robot, players, healerIndex) {
     var gameId = DEFAULT_GAMEID;
-    var ids = [];
-    ids.push(players[healerIndex]);
-    createMultiParty(ids, function(multiDM) {
-        robot.brain.data.games[gameId].HEALER_DM = multiDM;
-    });
+    var healerId = players[healerIndex].id;
+    robot.brain.data.games[gameId].HEALER_DM = healerId;
 }
 
 function setUpSeekerDM(robot, players, seekerIndex) {
     var gameId = DEFAULT_GAMEID;
-    var ids = [];
-    ids.push(players[seekerIndex]);
-    createMultiParty(ids, function(multiDM) {
-        robot.brain.data.games[gameId].SEEKER_DM = multiDM;
-    });
+    var seekerId = players[seekerIndex].id;
+    robot.brain.data.games[gameId].SEEKER_DM = seekerId;
 }
 
 
